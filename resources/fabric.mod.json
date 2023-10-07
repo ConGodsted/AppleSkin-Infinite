@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "appleskin",
+  "version": "${version}",
+
+  "name": "AppleSkin",
+  "description": "Adds various food-related HUD improvements",
+  "authors": [
+    "squeek502"
+  ],
+  "contact": {
+    "sources": "https://github.com/squeek502/AppleSkin",
+    "homepage": "https://minecraft.curseforge.com/projects/appleskin",
+    "issues": "https://github.com/squeek502/AppleSkin/issues"
+  },
+
+  "license": "Unlicense",
+  "icon": "assets/appleskin/appleskin.png",
+
+  "environment": "*",
+  "entrypoints": {
+    "client": [
+      "squeek.appleskin.AppleSkin"
+    ]
+  },
+  "mixins": [
+    "appleskin.mixins.json"
+  ],
+
+  "depends": {
+    "fabricloader": ">=0.7.2",
+    "fabric": "*"
+  }
+}

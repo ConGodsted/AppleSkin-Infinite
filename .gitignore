@@ -6,7 +6,6 @@ classes
 *.bat
 builds
 sources
-logs
 
 # Created by https://www.gitignore.io/api/gradle,intellij,eclipse,windows,osx,linux
 
@@ -178,3 +177,4 @@ Temporary Items
 
 # Linux trash folder which might appear on any partition or disk
 .Trash-*
+

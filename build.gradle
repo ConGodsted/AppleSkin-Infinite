@@ -1,112 +1,69 @@
-buildscript {
-	repositories {
-		maven { url = 'https://files.minecraftforge.net/maven' }
-		mavenCentral()
-	}
-	dependencies {
-		classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '5.1.+', changing: true
-	}
+plugins {
+	id 'fabric-loom' version '0.2.6-SNAPSHOT'
+	id 'maven-publish'
 }
-apply plugin: 'net.minecraftforge.gradle'
-//Only edit below this line, the above code adds and enables the necessary things for Forge to be setup.
-apply plugin: 'eclipse'
-apply plugin: 'maven-publish'
 
-sourceCompatibility = targetCompatibility = compileJava.sourceCompatibility = compileJava.targetCompatibility = '1.8' // Need this here so eclipse task generates correctly.
+sourceCompatibility = JavaVersion.VERSION_1_8
+targetCompatibility = JavaVersion.VERSION_1_8
+
+archivesBaseName = project.archives_base_name
+group = project.maven_group
 
 minecraft {
-	mappings channel: mappings_channel, version: mappings_version
-
-	// default run configurations.
-	// these can be tweaked, removed, or duplicated as needed.
-	runs {
-		client {
-			workingDirectory project.file('run')
-			mods {
-				appleskin {
-					source sourceSets.main
-				}
-			}
-		}
-
-		server {
-			workingDirectory project.file('run')
-			mods {
-				appleskin {
-					source sourceSets.main
-				}
-			}
-		}
-	}
 }
 
-group = project.maven_group
-archivesBaseName = project.archives_base_name
-version = "mc" + project.minecraft_version + "-" + project.mod_version
-def semver_version = project.mod_version + "+mc" + project.minecraft_version
-
 sourceSets.main.java.srcDirs += 'java'
-sourceSets.main.java.srcDirs += 'apis'
 sourceSets.main.resources.srcDirs += 'resources'
 
 dependencies {
-	minecraft 'net.minecraftforge:forge:'+minecraft_version+'-'+forge_version
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modCompile "net.fabricmc:fabric-loader:${project.loader_version}"
+
+	modCompile "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+}
+
+processResources {
+	inputs.property "vars", project.version
+	from(sourceSets.main.resources.srcDirs) {
+		include '**/fabric.mod.json'
+		expand 'version':project.version
+	}
+	from(sourceSets.main.resources.srcDirs) {
+		exclude '**/fabric.mod.json'
+	}
+}
+
+tasks.withType(JavaCompile) {
+	options.encoding = "UTF-8"
+}
+
+task sourcesJar(type: Jar, dependsOn: classes) {
+	classifier = "sources"
+	from sourceSets.main.allSource
 }
 
 jar {
-	manifest {
-		attributes([
-			"Specification-Title": "appleskin",
-			"Specification-Vendor": "squeek",
-			"Specification-Version": "1",
-			"Implementation-Title": project.name,
-			"Implementation-Version": semver_version,
-			"Implementation-Vendor" :"squeek",
-			"Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
-		])
-	}
-
-	finalizedBy 'reobfJar'
+	from "LICENSE"
 }
 
-task sourcesJar(type: Jar) {
-	archiveClassifier.set("sources")
-	from sourceSets.main.allJava
-}
-
-task apiJar(type: Jar) {
-	archiveClassifier.set("api")
-	from sourceSets.main.output
-	include "squeek/appleskin/api/**"
-
-	finalizedBy 'reobfJar'
-}
-
-artifacts {
-	archives sourcesJar
-	archives apiJar
-}
-
+// configure the maven publication
 publishing {
 	publications {
 		mavenJava(MavenPublication) {
-			groupId = group
-			artifactId = archivesBaseName
-
 			// add all the jars that should be included when publishing to maven
-			artifact(jar)
-			artifact(sourcesJar)
-			artifact(apiJar)
+			artifact(jar.archivePath) {
+				builtBy remapJar
+			}
+			artifact(sourcesJar) {
+				builtBy remapSourcesJar
+			}
 		}
 	}
 
+	// select the repositories you want to publish to
 	repositories {
-		maven {
-			url = project.findProperty("maven.url") ?: System.getenv("MAVEN_URL")
-			credentials {
-				username=project.findProperty("maven.user") ?: System.getenv("MAVEN_USER")
-				password=project.findProperty("maven.password") ?: System.getenv("MAVEN_PASSWORD")
-			}
-		}
+		// uncomment to publish to the local maven
+		// mavenLocal()
 	}
 }

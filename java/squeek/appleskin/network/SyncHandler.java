@@ -1,15 +1,14 @@
 package squeek.appleskin.network;
 
-import net.minecraft.entity.player.ServerPlayerEntity;
-import net.minecraft.util.ResourceLocation;
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.entity.living.LivingEvent.LivingUpdateEvent;
-import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.network.NetworkDirection;
-import net.minecraftforge.fml.network.NetworkRegistry;
-import net.minecraftforge.fml.network.simple.SimpleChannel;
-import squeek.appleskin.ModInfo;
+import io.netty.buffer.Unpooled;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.fabricmc.fabric.api.network.ClientSidePacketRegistry;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.network.PacketByteBuf;
+import net.minecraft.network.packet.s2c.play.CustomPayloadS2CPacket;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Identifier;
 import squeek.appleskin.helpers.HungerHelper;
 
 import java.util.HashMap;
@@ -18,62 +17,65 @@ import java.util.UUID;
 
 public class SyncHandler
 {
-	private static final String PROTOCOL_VERSION = Integer.toString(1);
-	public static final SimpleChannel CHANNEL = NetworkRegistry.ChannelBuilder
-		.named(new ResourceLocation(ModInfo.MODID, "sync"))
-		.clientAcceptedVersions(s -> true)
-		.serverAcceptedVersions(s -> true)
-		.networkProtocolVersion(() -> PROTOCOL_VERSION)
-		.simpleChannel();
+	private static final Identifier EXHAUSTION_SYNC = new Identifier("appleskin", "exhaustion_sync");
+	private static final Identifier SATURATION_SYNC = new Identifier("appleskin", "saturation_sync");
 
+	@Environment(EnvType.CLIENT)
 	public static void init()
 	{
-		CHANNEL.registerMessage(1, MessageExhaustionSync.class, MessageExhaustionSync::encode, MessageExhaustionSync::decode, MessageExhaustionSync::handle);
-		CHANNEL.registerMessage(2, MessageSaturationSync.class, MessageSaturationSync::encode, MessageSaturationSync::decode, MessageSaturationSync::handle);
+		ClientSidePacketRegistry.INSTANCE.register(EXHAUSTION_SYNC, (packetContext, packetByteBuf) ->
+		{
+			float exhaustion = packetByteBuf.readFloat();
+			MinecraftClient.getInstance().execute(() -> {
+				HungerHelper.setExhaustion(packetContext.getPlayer(), exhaustion);
+			});
+		});
+		ClientSidePacketRegistry.INSTANCE.register(SATURATION_SYNC, (packetContext, packetByteBuf) ->
+		{
+			float saturation = packetByteBuf.readFloat();
+			MinecraftClient.getInstance().execute(() -> {
+				packetContext.getPlayer().getHungerManager().setSaturationLevelClient(saturation);
+			});
+		});
+	}
 
-		MinecraftForge.EVENT_BUS.register(new SyncHandler());
+	private static CustomPayloadS2CPacket makeSyncPacket(Identifier identifier, float val)
+	{
+		PacketByteBuf buf = new PacketByteBuf(Unpooled.buffer());
+		buf.writeFloat(val);
+		return new CustomPayloadS2CPacket(identifier, buf);
 	}
 
 	/*
 	 * Sync saturation (vanilla MC only syncs when it hits 0)
 	 * Sync exhaustion (vanilla MC does not sync it at all)
 	 */
-	private static final Map<UUID, Float> lastSaturationLevels = new HashMap<>();
-	private static final Map<UUID, Float> lastExhaustionLevels = new HashMap<>();
+	private static final Map<UUID, Float> lastSaturationLevels = new HashMap<UUID, Float>();
+	private static final Map<UUID, Float> lastExhaustionLevels = new HashMap<UUID, Float>();
 
-	@SubscribeEvent
-	public void onLivingUpdateEvent(LivingUpdateEvent event)
+	public static void onPlayerUpdate(ServerPlayerEntity player)
 	{
-		if (!(event.getEntity() instanceof ServerPlayerEntity))
-			return;
+		Float lastSaturationLevel = lastSaturationLevels.get(player.getUuid());
+		Float lastExhaustionLevel = lastExhaustionLevels.get(player.getUuid());
 
-		ServerPlayerEntity player = (ServerPlayerEntity) event.getEntity();
-		Float lastSaturationLevel = lastSaturationLevels.get(player.getUniqueID());
-		Float lastExhaustionLevel = lastExhaustionLevels.get(player.getUniqueID());
-
-		if (lastSaturationLevel == null || lastSaturationLevel != player.getFoodStats().getSaturationLevel())
+		float saturation = player.getHungerManager().getSaturationLevel();
+		if (lastSaturationLevel == null || lastSaturationLevel != saturation)
 		{
-			Object msg = new MessageSaturationSync(player.getFoodStats().getSaturationLevel());
-			CHANNEL.sendTo(msg, player.connection.netManager, NetworkDirection.PLAY_TO_CLIENT);
-			lastSaturationLevels.put(player.getUniqueID(), player.getFoodStats().getSaturationLevel());
+			player.networkHandler.sendPacket(makeSyncPacket(SATURATION_SYNC, saturation));
+			lastSaturationLevels.put(player.getUuid(), saturation);
 		}
 
 		float exhaustionLevel = HungerHelper.getExhaustion(player);
 		if (lastExhaustionLevel == null || Math.abs(lastExhaustionLevel - exhaustionLevel) >= 0.01f)
 		{
-			Object msg = new MessageExhaustionSync(exhaustionLevel);
-			CHANNEL.sendTo(msg, player.connection.netManager, NetworkDirection.PLAY_TO_CLIENT);
-			lastExhaustionLevels.put(player.getUniqueID(), exhaustionLevel);
+			player.networkHandler.sendPacket(makeSyncPacket(EXHAUSTION_SYNC, exhaustionLevel));
+			lastExhaustionLevels.put(player.getUuid(), exhaustionLevel);
 		}
 	}
 
-	@SubscribeEvent
-	public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event)
+	public static void onPlayerLoggedIn(ServerPlayerEntity player)
 	{
-		if (!(event.getPlayer() instanceof ServerPlayerEntity))
-			return;
-
-		lastSaturationLevels.remove(event.getPlayer().getUniqueID());
-		lastExhaustionLevels.remove(event.getPlayer().getUniqueID());
+		lastSaturationLevels.remove(player.getUuid());
+		lastExhaustionLevels.remove(player.getUuid());
 	}
 }
